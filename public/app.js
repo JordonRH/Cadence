@@ -1,0 +1,63 @@
+const $ = selector => document.querySelector(selector);
+const themes = new Set(['meadow','paper','dusk','ocean','contrast']);
+let user = null;
+function theme(value) {
+  if (!themes.has(value)) value = 'meadow';
+  document.documentElement.dataset.theme = value;
+  $('#login-theme').value = value; $('#app-theme').value = value;
+  try { localStorage.setItem('cadence-theme', value); } catch {}
+}
+try { theme(localStorage.getItem('cadence-theme')); } catch { theme('meadow'); }
+async function api(path, method = 'GET', body) {
+  const response = await fetch(`/api${path}`, { method, credentials:'same-origin', headers: { 'Content-Type':'application/json', 'X-Cadence-Request':'1' }, ...(body === undefined ? {} : { body:JSON.stringify(body) }) });
+  const data = await response.json();
+  if (!response.ok) { if (response.status === 401 && path !== '/login') signedOut(); throw new Error(data.error || 'Please try again.'); }
+  return data;
+}
+function signedOut() { user = null; $('#login-screen').hidden = false; $('#app-screen').hidden = true; }
+function notice(message) { $('#notice').textContent = message; $('#notice').hidden = false; }
+function page(name) {
+  document.querySelectorAll('.page').forEach(el => { el.hidden = el.id !== `page-${name}`; });
+  document.querySelectorAll('[data-page]').forEach(el => { el.classList.toggle('active',el.dataset.page === name); if(el.dataset.page === name) el.setAttribute('aria-current','page'); else el.removeAttribute('aria-current'); });
+}
+function render() {
+  $('#greeting').textContent = `A little hello, ${user.name}.`;
+  const profile = user.profile;
+  $('#profile-badge').textContent = profile ? profile.language : 'A fresh start';
+  $('#language').value = profile?.language || ''; $('#goal').value = profile?.goal || ''; $('#minutes').value = profile?.minutes || 15;
+  $('#hero-title').textContent = profile ? `A little closer to ${profile.language}.` : 'Every adventure starts with hello.';
+  $('#hero-description').textContent = profile?.goal || 'Choose the language and real-life moments you want to make your own.';
+  $('#open-plan').textContent = profile ? 'Refine my direction →' : 'Find your starting point →';
+  document.querySelectorAll('[data-minutes]').forEach(el => el.setAttribute('aria-pressed',String(Number(el.dataset.minutes) === (profile?.minutes || 15))));
+}
+async function enter() {
+  user = await api('/me'); theme(user.theme); render();
+  $('#login-screen').hidden = true; $('#app-screen').hidden = false; page('today');
+}
+$('#login-theme').onchange = event => theme(event.target.value);
+$('#app-theme').onchange = async event => {
+  const before = user.theme; const value = event.target.value; theme(value);
+  try { await api('/theme','PUT',{theme:value}); user.theme = value; }
+  catch(error) { theme(before); notice(error.message); }
+};
+$('#login-form').onsubmit = async event => {
+  event.preventDefault(); const button = event.target.querySelector('button'); button.disabled = true; $('#login-error').textContent = '';
+  try { await api('/login','POST',Object.fromEntries(new FormData(event.target))); event.target.reset(); await enter(); }
+  catch(error) { $('#password').value = ''; $('#login-error').textContent = error.message; }
+  finally { button.disabled = false; }
+};
+$('#logout').onclick = async () => { try { await api('/logout','POST',{}); signedOut(); } catch(error) { notice(error.message); } };
+document.querySelectorAll('[data-page]').forEach(el => el.onclick = () => page(el.dataset.page));
+$('#open-plan').onclick = () => { page('path'); $('#language').focus(); };
+document.querySelectorAll('[data-go-path]').forEach(el => el.onclick = () => page('path'));
+$('#profile-form').onsubmit = async event => {
+  event.preventDefault(); const button = event.target.querySelector('button'); button.disabled = true;
+  try { const data = Object.fromEntries(new FormData(event.target)); data.minutes = Number(data.minutes); user.profile = await api('/profile','PUT',data); render(); page('today'); notice('Your starting point is saved. One little step, taken.'); }
+  catch(error) { notice(error.message); } finally { button.disabled = false; }
+};
+document.querySelectorAll('[data-minutes]').forEach(el => el.onclick = async () => {
+  const minutes = Number(el.dataset.minutes);
+  if (!user.profile) { page('path'); $('#minutes').value = minutes; return; }
+  try { user.profile = await api('/profile','PUT',{...user.profile,minutes}); render(); notice('Your session length is saved.'); } catch(error) { notice(error.message); }
+});
+enter().catch(error => { if (error.message !== 'Please sign in.') $('#login-error').textContent = error.message; });

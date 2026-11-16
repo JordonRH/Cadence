@@ -1,0 +1,32 @@
+name: cadence
+services:
+  cadence:
+    image: cadence:local
+    build:
+      context: .
+      args:
+        CADENCE_REVISION: ${CADENCE_REVISION:-development}
+    restart: unless-stopped
+    init: true
+    ports:
+      - '127.0.0.1:8099:3000'
+    environment:
+      BASE_URL: https://learning.jrhtechservices.party
+      TZ: Australia/Sydney
+    volumes:
+      - cadence-data:/app/data
+    networks:
+      proxy:
+        aliases: [cadence]
+    labels:
+      autoheal: 'true'
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+networks:
+  proxy:
+    external: true
+    name: aitrace_proxy
+volumes:
+  cadence-data:

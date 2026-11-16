@@ -1,0 +1,39 @@
+name: Cadence
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cadence-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: npm test
+      - name: Validate container build
+        run: docker build --build-arg CADENCE_REVISION=${{ github.sha }} -t cadence:verify .
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.CADENCE_DEPLOY_ENABLED == 'true'
+    runs-on: [self-hosted, linux, x64, cadence-deploy]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Deploy the verified commit
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: bash scripts/deploy.sh

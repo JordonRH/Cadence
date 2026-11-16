@@ -1,0 +1,16 @@
+name: cadence-runner
+services:
+  runner:
+    image: cadence-deploy-runner:local
+    build:
+      context: .
+      dockerfile: deploy/runner/Dockerfile
+    restart: unless-stopped
+    network_mode: host
+    group_add: ['${DOCKER_SOCKET_GID:-116}']
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./deploy-runner-state:/runner
+      - /usr/bin/docker:/usr/bin/docker:ro
+      - /usr/libexec/docker/cli-plugins/docker-compose:/usr/libexec/docker/cli-plugins/docker-compose:ro
+      - /home/jbox/Documents/ChatGPT/Linux general/Cadence:/home/jbox/Documents/ChatGPT/Linux general/Cadence

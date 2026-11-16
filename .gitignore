@@ -1,0 +1,10 @@
+node_modules/
+data/
+backups/
+.env
+.env.*
+secrets/
+deploy-runner-state/
+*.sqlite*
+*.log
+.DS_Store
