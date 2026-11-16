@@ -21,6 +21,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - run: npm ci --ignore-scripts
       - run: npm test
       - name: Validate container build
         run: docker build --build-arg CADENCE_REVISION=${{ github.sha }} -t cadence:verify .

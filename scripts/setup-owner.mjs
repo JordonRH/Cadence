@@ -31,6 +31,6 @@ const db = openStore(process.env.DATA_PATH || './data/cadence.sqlite');
 try {
   db.exec('BEGIN IMMEDIATE');
   db.prepare("INSERT INTO owner(id,email,name,password) VALUES (1,?,?,?) ON CONFLICT(id) DO UPDATE SET email=excluded.email,name=excluded.name,password=excluded.password").run(email,name,encoded);
-  db.exec('DELETE FROM sessions; DELETE FROM limits; COMMIT;');
-  console.log('Owner configured. Previous sessions revoked.');
+  db.exec('DELETE FROM sessions; DELETE FROM limits; DELETE FROM oauth_grants; COMMIT;');
+  console.log('Owner configured. Previous sessions and ChatGPT connections revoked.');
 } finally { db.close(); }

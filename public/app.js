@@ -19,6 +19,36 @@ function notice(message) { $('#notice').textContent = message; $('#notice').hidd
 function page(name) {
   document.querySelectorAll('.page').forEach(el => { el.hidden = el.id !== `page-${name}`; });
   document.querySelectorAll('[data-page]').forEach(el => { el.classList.toggle('active',el.dataset.page === name); if(el.dataset.page === name) el.setAttribute('aria-current','page'); else el.removeAttribute('aria-current'); });
+  if(user && ['library','progress'].includes(name)) refreshLearning().catch(error=>notice(error.message));
+  if(user && name === 'connect') refreshConnection().catch(error=>notice(error.message));
+}
+async function refreshLearning() {
+  const data=await api('/learning');
+  const phrases=$('#phrase-list'); phrases.replaceChildren();
+  if(!data.review.items.length) phrases.append(message('Your first useful words belong here. Ask ChatGPT to save selected phrases to Cadence after a lesson.'));
+  for(const item of data.review.items) {
+    const card=document.createElement('article'); card.className='activity';
+    const heading=document.createElement('h3'); heading.textContent=item.phrase;
+    const language=message(item.language,'subtle');
+    const details=document.createElement('details'); const summary=document.createElement('summary'); summary.textContent='Recall it, then reveal';
+    details.append(summary,message(item.meaning));
+    if(item.context) details.append(message(item.context,'subtle'));
+    card.append(language,heading,details); phrases.append(card);
+  }
+  if(data.review.next_offset !== null) phrases.append(message(`Showing ${data.review.items.length} of ${data.review.total} saved phrases. ChatGPT can retrieve the rest.`,'subtle'));
+  const lessons=$('#lesson-list'); lessons.replaceChildren();
+  if(!data.recent_lessons.length) lessons.append(message('No sessions saved yet. Connect ChatGPT to begin your first lesson.'));
+  for(const item of data.recent_lessons) {
+    const card=document.createElement('article'); card.className='activity';
+    const heading=document.createElement('h3'); heading.textContent=item.title;
+    card.append(heading,message(`${item.language} · ${item.minutes} min · ${new Date(item.created).toLocaleDateString()}`,'subtle'),message(item.summary),message(item.skills.join(' · '),'subtle')); lessons.append(card);
+  }
+}
+function message(text,className) {const p=document.createElement('p'); p.textContent=text; if(className) p.className=className; return p;}
+async function refreshConnection() {
+  const data=await api('/connections'); $('#mcp-address').value=data.mcp_url;
+  $('#connection-status').textContent=data.connections.length ? 'ChatGPT has an active Cadence connection.' : 'No active connection yet. Connect the Cadence plugin in ChatGPT to get started.';
+  $('#revoke-connection').hidden=!data.connections.length;
 }
 function render() {
   $('#greeting').textContent = `A little hello, ${user.name}.`;
@@ -32,6 +62,8 @@ function render() {
 }
 async function enter() {
   user = await api('/me'); theme(user.theme); render();
+  const next=new URLSearchParams(location.search).get('connect');
+  if(next?.startsWith('/oauth/authorize?') && new URL(next,location.origin).origin === location.origin) {location.assign(next); return;}
   $('#login-screen').hidden = true; $('#app-screen').hidden = false; page('today');
 }
 $('#login-theme').onchange = event => theme(event.target.value);
@@ -47,6 +79,8 @@ $('#login-form').onsubmit = async event => {
   finally { button.disabled = false; }
 };
 $('#logout').onclick = async () => { try { await api('/logout','POST',{}); signedOut(); } catch(error) { notice(error.message); } };
+$('#refresh-connection').onclick=()=>refreshConnection().catch(error=>notice(error.message));
+$('#revoke-connection').onclick=async()=>{try{await api('/connections/revoke','POST',{}); await refreshConnection(); notice('ChatGPT access revoked. You can reconnect whenever you like.');}catch(error){notice(error.message);}};
 document.querySelectorAll('[data-page]').forEach(el => el.onclick = () => page(el.dataset.page));
 $('#open-plan').onclick = () => { page('path'); $('#language').focus(); };
 document.querySelectorAll('[data-go-path]').forEach(el => el.onclick = () => page('path'));

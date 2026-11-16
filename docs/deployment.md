@@ -51,4 +51,4 @@ Both application and runner use `restart: unless-stopped`; no host startup servi
 
 ## Data boundary
 
-The SQLite volume contains password hashes, sessions and learning preferences. It is not included in Git or image builds. This foundation does not yet provide automated encrypted/off-machine backups, user export, account recovery UI or AI-provider configuration. Add those before treating future learning records as irreplaceable.
+The SQLite volume contains password hashes, sessions, OAuth grants, learning preferences, selected lesson summaries and saved review phrases. It is not included in Git or image builds. Automated encrypted/off-machine backups, user export, account recovery UI and AI-provider configuration remain future work. See [ChatGPT connection](chatgpt.md) for OAuth endpoints, scopes and revocation.

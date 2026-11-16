@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { openStore } from './store.mjs';
 import { csrf, throttle, identity, issueSession, sessionCookie, verifyPassword, hashPassword, themes, fail } from './auth.mjs';
+import { createOAuth } from './oauth.mjs';
+import { createLearning } from './learning.mjs';
+import { handleMCP } from './mcp.mjs';
 
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
 const assets = new Map([
@@ -15,6 +18,8 @@ const assets = new Map([
 export async function createApp({ path = process.env.DATA_PATH || './data/cadence.sqlite', origin = process.env.BASE_URL || 'https://learning.jrhtechservices.party', revision = process.env.CADENCE_REVISION || 'development' } = {}) {
   if (new URL(origin).origin !== origin) throw new Error('BASE_URL must be an origin without a trailing slash.');
   const db = openStore(path);
+  const oauth = createOAuth(db,origin);
+  const learning = createLearning(db);
   const dummy = await hashPassword('invalid account timing placeholder');
   let activeLogins = 0;
   const server = createServer(async (req, res) => {
@@ -25,12 +30,16 @@ export async function createApp({ path = process.env.DATA_PATH || './data/cadenc
       'Permissions-Policy': 'camera=(), microphone=(self), geolocation=()',
       'Cache-Control': 'no-store',
     };
+    if(req.url?.startsWith('/oauth/authorize')) headers['Content-Security-Policy'] = headers['Content-Security-Policy'].replace("form-action 'self'", "form-action 'self' https://chatgpt.com");
+    for(const [name,value] of Object.entries(headers)) res.setHeader(name,value);
     const json = (status, body, extra = {}) => {
       res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8', ...extra });
       res.end(JSON.stringify(body));
     };
     try {
       const url = new URL(req.url, origin);
+      if(await oauth.handle(req,res,url,json)) return;
+      if(url.pathname === '/mcp' || url.pathname === '/mcp/') return await handleMCP(req,res,{oauth,learning,origin});
       if (req.method === 'GET' && url.pathname === '/api/health') {
         db.prepare('SELECT 1').get();
         return json(200, { status: 'ok', service: 'cadence', revision });
@@ -63,6 +72,15 @@ export async function createApp({ path = process.env.DATA_PATH || './data/cadenc
         return json(200, { ok: true }, { 'Set-Cookie': sessionCookie(issueSession(db)) });
       }
       const key = identity(db, req);
+      if(url.pathname === '/api/connections' && req.method === 'GET') {
+        const clients=db.prepare("SELECT DISTINCT c.id,c.name FROM oauth_clients c JOIN oauth_grants g ON g.client_id=c.id WHERE g.kind IN ('access','refresh') AND g.expires > ?").all(Date.now());
+        return json(200,{mcp_url:oauth.resource,connections:clients});
+      }
+      if(url.pathname === '/api/connections/revoke' && req.method === 'POST') {
+        db.exec('DELETE FROM oauth_grants;');
+        return json(200,{revoked:true});
+      }
+      if(url.pathname === '/api/learning' && req.method === 'GET') return json(200,{...learning.context(),review:learning.listPhrases({})});
       if (url.pathname === '/api/me' && req.method === 'GET') {
         const owner = db.prepare('SELECT name,theme FROM owner WHERE id=1').get();
         return json(200, { ...owner, profile: db.prepare('SELECT language,goal,minutes FROM profile WHERE id=1').get() || null });
@@ -77,10 +95,7 @@ export async function createApp({ path = process.env.DATA_PATH || './data/cadenc
         return json(200, { theme: data.theme });
       }
       if (url.pathname === '/api/profile' && req.method === 'PUT') {
-        if (typeof data.language !== 'string' || !data.language.trim() || data.language.length > 80 || typeof data.goal !== 'string' || !data.goal.trim() || data.goal.length > 500 || ![5,15,30].includes(data.minutes)) fail(422, 'Choose a language, a goal and a session length.');
-        const profile = { language: data.language.trim(), goal: data.goal.trim(), minutes: data.minutes };
-        db.prepare('INSERT INTO profile VALUES (1,?,?,?) ON CONFLICT(id) DO UPDATE SET language=excluded.language,goal=excluded.goal,minutes=excluded.minutes').run(profile.language, profile.goal, profile.minutes);
-        return json(200, profile);
+        return json(200, learning.setProfile(data).profile);
       }
       fail(404, 'Not found.');
     } catch (error) { json(error.status || 500, { error: error.status ? error.message : 'Something went wrong. Please try again.' }); }

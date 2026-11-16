@@ -3,7 +3,8 @@ WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 DATA_PATH=/app/data/cadence.sqlite
 ARG CADENCE_REVISION=unknown
 ENV CADENCE_REVISION=$CADENCE_REVISION
-COPY --chown=node:node package.json ./
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --chown=node:node src ./src
 COPY --chown=node:node public ./public
 COPY --chown=node:node scripts/setup-owner.mjs ./scripts/setup-owner.mjs
