@@ -1,6 +1,6 @@
 # Cadence
 
-A calm place to learn a language. Small steps, useful practice and a cartoon hedgehog companion.
+A calm place to learn a language. Small steps, useful practice and Echo, a fluffy cartoon baby cheetah companion.
 
 Public address: **https://learning.jrhtechservices.party** (operator-managed networking).
 

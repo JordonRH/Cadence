@@ -5,6 +5,6 @@ try {
   if (!health.ok || data.service !== 'cadence' || (process.argv[2] && data.revision !== process.argv[2])) throw new Error();
   const protectedPage = await fetch(base+'/api/me',{signal:AbortSignal.timeout(3000)});
   if (protectedPage.status !== 401) throw new Error();
-  const asset = await fetch(base+'/assets/hedgehog.png',{signal:AbortSignal.timeout(3000)});
+  const asset = await fetch(base+'/assets/echo.png',{signal:AbortSignal.timeout(3000)});
   if (!asset.ok) throw new Error();
 } catch { process.exitCode = 1; }

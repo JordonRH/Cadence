@@ -10,7 +10,7 @@ const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
-  ['/assets/hedgehog.png', ['assets/hedgehog.png', 'image/png']],
+  ['/assets/echo.png', ['assets/echo.png', 'image/png']],
 ]);
 export async function createApp({ path = process.env.DATA_PATH || './data/cadence.sqlite', origin = process.env.BASE_URL || 'https://learning.jrhtechservices.party', revision = process.env.CADENCE_REVISION || 'development' } = {}) {
   if (new URL(origin).origin !== origin) throw new Error('BASE_URL must be an origin without a trailing slash.');
