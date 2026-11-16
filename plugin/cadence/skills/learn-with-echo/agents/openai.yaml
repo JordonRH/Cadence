@@ -1,0 +1,4 @@
+interface:
+  display_name: "Learn with Echo"
+  short_description: "Practise a language with Cadence"
+  default_prompt: "Use Cadence to start a short language lesson with Echo, then save the useful practice we choose."
