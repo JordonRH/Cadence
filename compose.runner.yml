@@ -6,6 +6,14 @@ services:
       context: .
       dockerfile: deploy/runner/Dockerfile
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pgrep", "-x", "Runner.Listener"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    labels:
+      autoheal: "true"
     network_mode: host
     group_add: ['${DOCKER_SOCKET_GID:-116}']
     volumes:

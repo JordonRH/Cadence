@@ -39,6 +39,8 @@ The runner has Docker daemon access and is for this trusted repository only. Kee
 
 Deploy refuses tracked local edits, checks the expected main commit, builds a revision-labelled image, restarts, verifies health/revision, checks anonymous access is denied and tests reachability from the shared Docker network. It retains the previous image for rollback. Image rollback does not restore data or reverse migrations.
 
+The deployment runner image includes Python and PyYAML for the JRH preflight. Its Compose service checks the local `Runner.Listener` process and opts into the shared autoheal controller. To update the runner, build and validate it with the JRH preflight for `compose.runner.yml`, then run `docker compose -f compose.runner.yml up -d --no-build --no-deps runner` while no deployment job is running. Keep the existing runner state mount so it can reconnect with its current registration. To roll back, use the previous runner image and matching Compose definition. Rebuild the previous image from the corresponding Git revision if its tag is unavailable.
+
 ## Start / verify / restart
 
 ```bash
