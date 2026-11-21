@@ -4,9 +4,12 @@ Cadence exposes **https://learning.jrhtechservices.party/mcp/** using authentica
 
 ## Connect
 
-Install the private Cadence plugin, choose Connect, sign in to Cadence and approve the requested learning permissions. Existing browser sign-in can be reused. If adding the MCP server manually, use the endpoint above with OAuth, dynamic client registration and scopes `learning.read learning.write`. No client secret is required.
+1. In [ChatGPT Plugins on the web](https://chatgpt.com/plugins), select **+ → Add custom MCP server**. Name it **Cadence** and use `https://learning.jrhtechservices.party/mcp/` with OAuth. ChatGPT can discover the supported client registration methods from Cadence. If asked for scopes, use `learning.read learning.write`. Leave client credentials blank.
+2. Choose **Create as a plugin**, sign in to Cadence and approve the learning permissions. Verify that the discovered tools include `get_learning_context`, `save_lesson` and `save_review_items`.
+3. Copy the `plugin_asdk_app_…` registration ID from the ChatGPT page URL. Use that registration for the private Cadence release with **Learn with Echo**. The account package must use the registered app connection, either by adding the skill to the eligible app-backed plugin or by linking the verified app ID in `.app.json` via `extensions.com.openai.apps`. The portable `mcp.json` configures the endpoint for compatible clients.
+4. Install the finished plugin, start a new chat and select `@Cadence`. Check that it can read the learning profile on web and mobile. Then save one authorised practice record and verify it appears in **Progress** or **Library** before saving a backlog.
 
-Try: “Use Cadence to start my first language lesson. Ask what you need to know, then save a summary and five useful phrases after we practise.”
+OpenAI documents web-only custom server registration and plan limits for custom MCP write actions. The registered plugin still needs to be tested on the intended mobile surface. [ChatGPT connection requirements](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt)
 
 The app’s ChatGPT tab shows connection status and can revoke all ChatGPT access. Library displays saved phrases with meanings hidden until revealed. Progress displays saved lesson summaries. Refresh or revisit a tab after saving in chat.
 
@@ -24,7 +27,7 @@ No tool reads credentials, executes commands, fetches arbitrary URLs or deletes 
 
 ## Authorization
 
-The app publishes authorization-server and protected-resource metadata. It supports authorization codes with S256 PKCE, public clients using dynamic registration, exact ChatGPT callback checks and resource-bound scopes. Browser consent is single-use and bound to the live signed-in session. Successful and denied callbacks include the issuer identifier. Codes, access tokens, refresh tokens and consent nonces are hashed in the database. Refresh tokens rotate and replay revokes their grant family. Browser revocation and operator account reset invalidate all OAuth grants.
+The app publishes authorization-server and protected-resource metadata. It supports authorization codes with S256 PKCE, public clients using dynamic registration or ChatGPT's stable Client ID Metadata Document (CIMD), exact ChatGPT callback checks and resource-bound scopes. For CIMD, a signed-in authorization request verifies the public document at `https://chatgpt.com/oauth/client.json` over HTTPS and requires the stable ChatGPT callback. Browser consent is single-use and bound to the live signed-in session. Successful and denied callbacks include the issuer identifier. Codes, access tokens, refresh tokens and consent nonces are hashed in the database. Refresh tokens rotate and replay revokes their grant family. Browser revocation and operator account reset invalidate all OAuth grants.
 
 Only learning records are exposed through tools. No password or browser cookie is shared with ChatGPT. Runtime credentials and OAuth grants are never written to application logs. The existing database and login are preserved by additive table creation.
 

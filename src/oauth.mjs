@@ -3,6 +3,8 @@ import { digest, identity, fail, throttle } from './auth.mjs';
 import { readBody, escapeHtml } from './http.mjs';
 
 export const SCOPES = ['learning.read','learning.write'];
+const CHATGPT_CLIENT_DOCUMENT = 'https://chatgpt.com/oauth/client.json';
+const CHATGPT_STABLE_CALLBACK = 'https://chatgpt.com/connector_platform_oauth_redirect';
 const fresh = () => randomBytes(40).toString('base64url');
 const callbacks = value => {
   try {
@@ -13,6 +15,31 @@ const callbacks = value => {
 };
 const scopesFor = value => typeof value === 'string' && value.length < 200 && value.trim() ? [...new Set(value.split(/\s+/))].sort() : [];
 const validScopes = values => values.length > 0 && values.every(value => SCOPES.includes(value));
+
+async function verifyChatGPTClient() {
+  try {
+    const response = await fetch(CHATGPT_CLIENT_DOCUMENT, {
+      headers: { Accept: 'application/json' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!response.ok || !response.body) return false;
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.byteLength;
+      if (size > 16384) return false;
+      chunks.push(chunk);
+    }
+    const metadata = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    const methods = metadata.token_endpoint_auth_methods_supported ?? [metadata.token_endpoint_auth_method];
+    return metadata.client_id === CHATGPT_CLIENT_DOCUMENT &&
+      Array.isArray(metadata.redirect_uris) && metadata.redirect_uris.includes(CHATGPT_STABLE_CALLBACK) &&
+      Array.isArray(methods) && methods.includes('none');
+  } catch {
+    return false;
+  }
+}
 
 export function createOAuth(db, origin) {
   const resource = origin + '/mcp/';
@@ -35,7 +62,7 @@ export function createOAuth(db, origin) {
   async function handle(req,res,url,json) {
     const path = url.pathname;
     if (req.method === 'GET' && path === '/.well-known/oauth-authorization-server') {
-      json(200,{issuer:origin,authorization_endpoint:origin+'/oauth/authorize',token_endpoint:origin+'/oauth/token',registration_endpoint:origin+'/oauth/register',revocation_endpoint:origin+'/oauth/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],code_challenge_methods_supported:['S256'],token_endpoint_auth_methods_supported:['none'],scopes_supported:SCOPES,authorization_response_iss_parameter_supported:true}); return true;
+      json(200,{issuer:origin,authorization_endpoint:origin+'/oauth/authorize',token_endpoint:origin+'/oauth/token',registration_endpoint:origin+'/oauth/register',revocation_endpoint:origin+'/oauth/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],code_challenge_methods_supported:['S256'],token_endpoint_auth_methods_supported:['none'],scopes_supported:SCOPES,authorization_response_iss_parameter_supported:true,client_id_metadata_document_supported:true}); return true;
     }
     if (req.method === 'GET' && ['/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp','/.well-known/oauth-protected-resource/mcp/','/mcp/.well-known/oauth-protected-resource'].includes(path)) {
       json(200,{resource,authorization_servers:[origin],scopes_supported:SCOPES,bearer_methods_supported:['header']}); return true;
@@ -53,17 +80,24 @@ export function createOAuth(db, origin) {
       }
       if(path === '/oauth/authorize' && req.method === 'GET') {
         const query = Object.fromEntries(url.searchParams);
-        const client = db.prepare('SELECT * FROM oauth_clients WHERE id=?').get(query.client_id || '');
+        const clientId = query.client_id || '';
+        const usesClientDocument = clientId === CHATGPT_CLIENT_DOCUMENT;
+        const client = usesClientDocument ? null : db.prepare('SELECT redirects FROM oauth_clients WHERE id=?').get(clientId);
+        const allowedCallback = usesClientDocument ? query.redirect_uri === CHATGPT_STABLE_CALLBACK : client && JSON.parse(client.redirects).includes(query.redirect_uri);
         const scopes = scopesFor(query.scope || SCOPES.join(' '));
-        if (!client || !JSON.parse(client.redirects).includes(query.redirect_uri) || query.response_type !== 'code' || query.code_challenge_method !== 'S256' || !/^[A-Za-z0-9_-]{43}$/.test(query.code_challenge || '') || query.resource !== resource || !validScopes(scopes) || (query.state || '').length > 2048) fail(400,'Invalid authorization request.');
+        if (!allowedCallback || query.response_type !== 'code' || query.code_challenge_method !== 'S256' || !/^[A-Za-z0-9_-]{43}$/.test(query.code_challenge || '') || query.resource !== resource || !validScopes(scopes) || (query.state || '').length > 2048) fail(400,'Invalid authorization request.');
         let browser;
         try { browser=identity(db,req); } catch(error) {
           if(error.status !== 401) throw error;
           res.writeHead(303,{Location:'/?connect='+encodeURIComponent(url.pathname+url.search)}); res.end(); return true;
         }
+        if (usesClientDocument) {
+          if (!await verifyChatGPTClient()) fail(503,'Could not verify the ChatGPT OAuth client. Please try again.');
+          db.prepare('INSERT OR IGNORE INTO oauth_clients VALUES (?,?,?)').run(clientId,'ChatGPT',JSON.stringify([CHATGPT_STABLE_CALLBACK]));
+        }
         const nonce = fresh();
         const payload = { redirect:query.redirect_uri,state:query.state || '',challenge:query.code_challenge,scopes,resource,browser };
-        save(nonce,'consent',client.id,fresh(),payload,600000);
+        save(nonce,'consent',clientId,fresh(),payload,600000);
         res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
         res.end(`<!doctype html><html lang="en" data-theme="meadow"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect ChatGPT · Cadence</title><link rel="stylesheet" href="/style.css"></head><body><main class="connection-consent"><img src="/assets/echo.png" alt="Echo, your learning companion" width="100" height="110"><p class="eyebrow">YOUR LEARNING, CONNECTED</p><h1>Learn with Echo<br>and ChatGPT.</h1><p>Allow ChatGPT to ${scopes.includes('learning.read') ? 'read your learning profile, lesson summaries and saved phrases' : 'save learning results'}${scopes.includes('learning.read') && scopes.includes('learning.write') ? ', and save lessons and review phrases you choose' : ''}.</p><p>Your password and browser session are never shared. You can revoke access in Cadence at any time.</p><form action="/oauth/authorize" method="post"><input type="hidden" name="consent" value="${escapeHtml(nonce)}"><button class="primary" name="decision" value="allow">Connect ChatGPT →</button><button class="text-button" name="decision" value="deny">Cancel connection</button></form></main></body></html>`); return true;
       }

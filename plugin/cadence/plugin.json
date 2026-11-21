@@ -1,12 +1,13 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "cadence",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "Learn languages with Echo and save your practice in your private Cadence app.",
   "author": { "name": "JordonRH" },
   "homepage": "https://learning.jrhtechservices.party",
   "extensions": {
     "com.openai": {
+      "requires_local_executor": false,
       "interface": {
         "displayName": "Cadence",
         "shortDescription": "Learn languages with Echo",

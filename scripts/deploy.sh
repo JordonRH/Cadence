@@ -18,6 +18,7 @@ export CADENCE_REVISION="$latest"
 previous=$(docker image ls --no-trunc --quiet cadence:local | head -n 1)
 if [[ -n "$previous" ]]; then docker tag "$previous" cadence:previous; fi
 docker compose build --pull
+python3 scripts/jrh-compliance.py preflight --approved-config --selector live --compose compose.yml
 rollback() {
   if [[ -n "$previous" ]]; then
     docker tag cadence:previous cadence:local

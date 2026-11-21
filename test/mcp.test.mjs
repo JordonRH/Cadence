@@ -9,6 +9,7 @@ import {hashPassword,issueSession,COOKIE,digest} from '../src/auth.mjs';
 const origin='https://learning.jrhtechservices.party';
 const resource=origin+'/mcp/';
 const callback='https://chatgpt.com/connector_platform_oauth_redirect';
+const clientDocument='https://chatgpt.com/oauth/client.json';
 async function fixture(t) {
   const app=await createApp({path:':memory:',origin});
   app.db.prepare('INSERT INTO owner(id,email,name,password) VALUES (1,?,?,?)').run('synthetic@example.test','Synthetic learner',await hashPassword('synthetic-only-not-a-real-account'));
@@ -22,9 +23,9 @@ async function fixture(t) {
   const registration=await json('/oauth/register',{redirect_uris:[callback],token_endpoint_auth_method:'none'});
   assert.equal(registration.status,201);
   const client=(await registration.json()).client_id;
-  async function authorize({scopes='learning.read learning.write',browser=cookie,decision='allow'}={}) {
+  async function authorize({scopes='learning.read learning.write',browser=cookie,decision='allow',clientId=client}={}) {
     const verifier=randomBytes(48).toString('base64url');
-    const query=new URLSearchParams({client_id:client,redirect_uri:callback,response_type:'code',code_challenge_method:'S256',code_challenge:createHash('sha256').update(verifier).digest('base64url'),resource,scope:scopes,state:'synthetic-state'});
+    const query=new URLSearchParams({client_id:clientId,redirect_uri:callback,response_type:'code',code_challenge_method:'S256',code_challenge:createHash('sha256').update(verifier).digest('base64url'),resource,scope:scopes,state:'synthetic-state'});
     const page=await request('/oauth/authorize?'+query,{headers:{cookie:browser}});
     assert.equal(page.status,200);
     const html=await page.text(); const nonce=html.match(/name="consent" value="([A-Za-z0-9_-]+)"/)?.[1];
@@ -66,6 +67,41 @@ test('OAuth nonce is bound to its browser and safe markup is returned',async t=>
   assert.equal((await f.form('/oauth/authorize',{consent:nonce,decision:'allow'},{origin:'https://attacker.example',cookie:f.cookie})).status,403);
   assert.equal((await f.form('/oauth/authorize',{consent:nonce,decision:'allow'},{origin,cookie:f.cookie})).status,303);
   assert.equal((await f.form('/oauth/authorize',{consent:nonce,decision:'allow'},{origin,cookie:f.cookie})).status,400);
+});
+test('ChatGPT CIMD uses its verified public client and the existing consent and token flow',async t=>{
+  const f=await fixture(t);
+  const fetchLocal=globalThis.fetch;
+  let documentRequests=0;
+  let publishedClientId='https://invalid.example/oauth/client.json';
+  t.mock.method(globalThis,'fetch',async (url, options)=>{
+    if (url===clientDocument) {
+      documentRequests++;
+      assert.equal(options.redirect,'error');
+      return Response.json({client_id:publishedClientId,redirect_uris:[callback],token_endpoint_auth_method:'private_key_jwt',token_endpoint_auth_methods_supported:['none','private_key_jwt']});
+    }
+    assert.ok(url.startsWith(f.base+'/'));
+    return fetchLocal(url, options);
+  });
+  const metadata=await(await f.request('/.well-known/oauth-authorization-server')).json();
+  assert.equal(metadata.client_id_metadata_document_supported,true);
+  assert.equal(metadata.registration_endpoint,origin+'/oauth/register');
+  const query=new URLSearchParams({client_id:'https://invalid.example/oauth/client.json',redirect_uri:callback,response_type:'code',code_challenge_method:'S256',code_challenge:'a'.repeat(43),resource});
+  const authorize=()=>f.request('/oauth/authorize?'+query,{headers:{cookie:f.cookie}});
+  assert.equal((await authorize()).status,400);
+  query.set('client_id',clientDocument);
+  query.set('redirect_uri','https://chatgpt.com/connector/oauth/different-callback');
+  assert.equal((await authorize()).status,400);
+  assert.equal(documentRequests,0);
+  query.set('redirect_uri',callback);
+  assert.equal((await authorize()).status,503);
+  publishedClientId=clientDocument;
+  const grant=await f.authorize({clientId:clientDocument});
+  assert.equal((await f.exchange(grant)).status,400);
+  const response=await f.exchange(grant,{client_id:clientDocument});
+  assert.equal(response.status,200);
+  const tokens=await response.json();
+  assert.equal((await f.form('/oauth/token',{grant_type:'refresh_token',refresh_token:tokens.refresh_token,client_id:clientDocument,resource})).status,200);
+  assert.equal(documentRequests,2);
 });
 test('MCP SDK client can discover tools and persist real-shaped learning records safely',async t=>{
   const f=await fixture(t); const tokens=await f.access();
