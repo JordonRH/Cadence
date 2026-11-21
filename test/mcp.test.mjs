@@ -103,6 +103,28 @@ test('ChatGPT CIMD uses its verified public client and the existing consent and 
   assert.equal((await f.form('/oauth/token',{grant_type:'refresh_token',refresh_token:tokens.refresh_token,client_id:clientDocument,resource})).status,200);
   assert.equal(documentRequests,2);
 });
+test('MCP tool discovery is public and anonymous learning actions prompt for OAuth',async t=>{
+  const f=await fixture(t);
+  const client=new Client({name:'discovery-test',version:'1.0.0'});
+  await client.connect(new StreamableHTTPClientTransport(new URL(f.base+'/mcp/')));
+  t.after(()=>client.close());
+  const {tools}=await client.listTools();
+  assert.equal(tools.length,5);
+  for(const tool of tools) {
+    assert.deepEqual(tool._meta.securitySchemes,[{type:'oauth2',scopes:[tool.annotations.readOnlyHint?'learning.read':'learning.write']}]);
+  }
+  const read=await client.callTool({name:'get_learning_context',arguments:{}});
+  const write=await client.callTool({name:'save_lesson',arguments:{session_id:'anonymous-test',language:'French',title:'Example lesson',summary:'Practice must not be saved without OAuth.',skills:['reading'],minutes:5}});
+  for(const [result,scope] of [[read,'learning.read'],[write,'learning.write']]) {
+    assert.equal(result.isError,true);
+    assert.equal(result.structuredContent,undefined);
+    const challenge=result._meta['mcp/www_authenticate'][0];
+    assert.match(challenge,/error="invalid_token"/);
+    assert.match(challenge,/error_description="Connect your Cadence account/);
+    assert.ok(challenge.includes(`scope="${scope}"`));
+  }
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS count FROM lessons').get().count,0);
+});
 test('MCP SDK client can discover tools and persist real-shaped learning records safely',async t=>{
   const f=await fixture(t); const tokens=await f.access();
   assert.ok(f.db.prepare("SELECT id FROM oauth_grants WHERE id=? AND kind='access'").get(digest(tokens.access_token)));

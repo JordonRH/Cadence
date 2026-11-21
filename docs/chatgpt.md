@@ -15,6 +15,8 @@ The app’s ChatGPT tab shows connection status and can revoke all ChatGPT acces
 
 ## Tools
 
+ChatGPT can discover the tool names and schemas before sign-in. Every tool verifies the OAuth token and its required scope before accessing learning data.
+
 | Tool | Permission | Behaviour |
 |---|---|---|
 | `get_learning_context` | learning.read | Profile, recent lesson summaries and phrase count |
